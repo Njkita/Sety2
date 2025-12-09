@@ -1,0 +1,73 @@
+version: "3.9"
+
+services:
+  pg_shard1:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: notes
+      POSTGRES_PASSWORD: notes
+      POSTGRES_DB: notesdb
+    ports:
+      - "5433:5432"
+
+  pg_shard2:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: notes
+      POSTGRES_PASSWORD: notes
+      POSTGRES_DB: notesdb
+    ports:
+      - "5434:5432"
+
+  service1:
+    build:
+      context: ./service
+    environment:
+      PG_DSN_1: postgres://notes:notes@pg_shard1:5432/notesdb
+      PG_DSN_2: postgres://notes:notes@pg_shard2:5432/notesdb
+    depends_on:
+      - pg_shard1
+      - pg_shard2
+    expose:
+      - "8000"
+      - "50051"
+
+    command: >
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  service2:
+    build:
+      context: ./service
+    environment:
+      PG_DSN_1: postgres://notes:notes@pg_shard1:5432/notesdb
+      PG_DSN_2: postgres://notes:notes@pg_shard2:5432/notesdb
+    depends_on:
+      - pg_shard1
+      - pg_shard2
+    expose:
+      - "8000"
+      - "50051"
+    command: >
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  lb:
+    build:
+      context: ./lb
+    depends_on:
+      - service1
+      - service2
+    expose:
+      - "8443"
+      - "8444"
+    ports:
+      - "8444:8444"
+
+  nginx:
+    image: nginx:1.27
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - lb
+    ports:
+      - "443:443"
